@@ -1,206 +1,319 @@
----
-title: Configure a development build in cloud
-sidebar_title: Configure development build
-description: Learn how to configure a development build for a project using EAS Build.
-hasVideoLink: true
----
+// CampoFácil - App básico para controle de aplicações
+// Funcionalidades: múltiplos produtos, salvar histórico, gerar PDF com marca d'água "Feito por Felipe Ferreira"
+// Testado para rodar via Expo Go (iOS e Android)
 
-import { Collapsible } from '~/ui/components/Collapsible';
-import { ContentSpotlight } from '~/ui/components/ContentSpotlight';
-import { ProgressTracker } from '~/ui/components/ProgressTracker';
-import { Terminal } from '~/ui/components/Snippet';
-import { Step } from '~/ui/components/Step';
-import { CODE } from '~/ui/components/Text';
-import { VideoBoxLink } from '~/ui/components/VideoBoxLink';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Button,
+  FlatList,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Platform,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
-In this chapter, we'll set up and configure a development build with EAS for our example app.
+const STORAGE_KEY = "@campofacil_aplicacoes_v1";
 
-<VideoBoxLink videoId="uQCE9zl3dXU" title="Watch: How to configure a development build" />
+function ProdutoRow({ item, onChange, onRemove }) {
+  return (
+    <View style={styles.prodRow}>
+      <TextInput
+        placeholder="Produto"
+        value={item.produto}
+        onChangeText={(t) => onChange("produto", t)}
+        style={[styles.input, styles.prodInput]}
+      />
+      <TextInput
+        placeholder="Dose L/ha"
+        value={item.doseLha}
+        onChangeText={(t) => onChange("doseLha", t)}
+        style={[styles.input, styles.smallInput]}
+        keyboardType="numeric"
+      />
+      <TextInput
+        placeholder="Dose L/bomba"
+        value={item.doseLbomba}
+        onChangeText={(t) => onChange("doseLbomba", t)}
+        style={[styles.input, styles.smallInput]}
+        keyboardType="numeric"
+      />
+      <TextInput
+        placeholder="Obs"
+        value={item.obs}
+        onChangeText={(t) => onChange("obs", t)}
+        style={[styles.input, styles.prodInput]}
+      />
+      <TouchableOpacity onPress={onRemove} style={styles.removeBtn}>
+        <Text style={{ color: "white" }}>Rem</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
----
+export default function App() {
+  // ficha fields
+  const [pulverizador, setPulverizador] = useState("");
+  const [fazenda, setFazenda] = useState("");
+  const [talhao, setTalhao] = useState("");
+  const [area, setArea] = useState("");
+  const [data, setData] = useState(""); // usuário digita data
+  const [vazao, setVazao] = useState("");
+  const [hectaresBomba, setHectaresBomba] = useState("");
+  const [tipoOp, setTipoOp] = useState("");
+  const [operador, setOperador] = useState("");
 
-## Understanding development builds
+  // produtos dinâmicos
+  const [produtos, setProdutos] = useState([
+    { id: String(Date.now()), produto: "", doseLha: "", doseLbomba: "", obs: "" },
+  ]);
 
-Let's start by learning about what are development builds and why we need them.
+  // histórico
+  const [historico, setHistorico] = useState([]);
 
-A [development build](/develop/development-builds/introduction/) is a debug version of our project. It is optimized for quick iterations when creating an app. It contains the [`expo-dev-client`](/versions/latest/sdk/dev-client/) library, which offers a robust and complete development environment. This setup allows us to integrate any native library or change code inside the [native directories](/workflow/overview/#android-and-ios-native-projects) as required.
+  useEffect(() => {
+    carregarHistorico();
+  }, []);
 
-### Key highlights
-
-> **Note:** If you are familiar with [Expo Go](/get-started/expo-go/), think of a development build as a customizable version of Expo Go that is unique to the requirements of a project.
-
-| Feature                           | Development Builds                                                                                                                             | Expo Go                                                                                              |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Development phase**             | Offers web-like iteration speed for mobile app development.                                                                                    | Allows for quick iteration and testing of Expo SDK projects using the client app.                    |
-| **Collaboration**                 | Facilitates team testing with shared native runtime.                                                                                           | Easy project sharing via QR codes on a device.                                                       |
-| **Third-party libraries support** | Full support for any [third-party library](/workflow/using-libraries/#third-party-libraries), including those that require custom native code. | Limited to libraries within the Expo SDK, not suitable for custom native dependencies.               |
-| **Customization**                 | Extensive customization with [config plugins](/config-plugins/introduction/) and direct access to native code.                                 | Limited customization with a focus on Expo SDK capabilities without direct native code modification. |
-| **Intended use**                  | Ideal for full-fledged app development aimed at store deployment, offering a complete development environment and tools.                       | Ideal for learning, prototyping, and experimenting. Not recommended for production apps.             |
-
-<Step label="1">
-
-## Install expo-dev-client library
-
-To initialize our project for a development build, let's [`cd`](https://developer.mozilla.org/en-US/docs/Learn/Tools_and_testing/Understanding_client-side_tools/Command_line#basic_built-in_terminal_commands) inside our project directory and run the following command to install the library:
-
-<Terminal cmd={['$ npx expo install expo-dev-client']} />
-
-### Start the development server
-
-Run the `npx expo start` to start the [development server](/get-started/start-developing/#start-a-development-server):
-
-<Terminal cmd={['$ npx expo start']} />
-
-This command starts the metro bundler. In the terminal window, we see the QR code followed by the `Metro waiting on...` and a manifest URL:
-
-<ContentSpotlight
-  alt="Running development server"
-  src="/static/images/tutorial/eas/development-server.png"
-  className="max-w-[600px]"
-/>
-
-Let's notice the changes installing the `expo-dev-client` library:
-
-- The manifest URL contains `expo-development-client` along with the app scheme
-- The development server now operates for a development build (instead of Expo Go).
-
-Since we do not have a development build installed on one of our devices or an emulator/simulator, we can't run our project yet.
-
-</Step>
-
-<Step label="2">
-
-## Initialize a development build
-
-### Install EAS CLI
-
-We need to install the EAS Command Line Interface (CLI) tool as a global dependency on our local machine. Run the following command:
-
-<Terminal cmd={['$ npm install -g eas-cli']} />
-
-### Log in or sign up for an Expo account
-
-> If you have an Expo account and are signed in using Expo CLI, skip this step. If you don't have an Expo account, [sign up here](https://expo.dev/signup) and proceed with the login command described below.
-
-To log in, run the following command:
-
-<Terminal cmd={['$ eas login']} />
-
-This command asks for our Expo account email or username and password to complete the login.
-
-### Initialize and link the project to EAS
-
-For any new project, the first step is to initialize and link it to the EAS servers. Run the following command:
-
-<Terminal cmd={['$ eas init']} />
-
-On running, this command:
-
-- Requests verification of the account owner by entering our Expo account credentials and asks if we want to create a new EAS project:
-
-<Terminal
-  cmd={[
-    '# Output after running eas init',
-    '✔ Which account should own this project? > your-username',
-    '✔ Would you like to create a project for @your-username/sticker-smash? … yes',
-    '✔ Created @your-username/sticker-smash',
-    '✔ Project successfully linked (ID: XXXX-XX-XX-XXXX) (modified app.json)',
-  ]}
-/>
-
-- Creates EAS project and provides a link to that project which we can open in the EAS dashboard:
-
-<ContentSpotlight
-  alt="New project in EAS dashboard"
-  src="/static/images/tutorial/eas/new-project.png"
-/>
-
-- Generates a unique `projectId` and links this EAS project to the example app on our development machine.
-- Modifies **app.json** to include [`extra.eas.projectId`](/versions/latest/sdk/constants/#easconfig) and updates its value with the unique ID created.
-
-<Collapsible summary={<>What is <CODE>projectId</CODE> in app.json?</>}>
-
-When `eas init` runs, it associates a unique identifier for our project in **app.json** under `extra.eas.projectId`. The value of this property is used to identify our project on EAS servers.
-
-```json
-{
-  "extra": {
-    "eas": {
-      "projectId": "0cd3da2d-xxx-xxx-xxx-xxxxxxxxxx"
+  async function carregarHistorico() {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        setHistorico(JSON.parse(raw));
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
-}
-```
 
-</Collapsible>
-
-</Step>
-
-<Step label="3">
-
-## Configure project for EAS Build
-
-To set up our project for EAS Build, run the following command:
-
-<Terminal cmd={['$ eas build:configure']} />
-
-On running, this command:
-
-- Prompts to select a platform: **Android**, **iOS**, or **All**. Since we are creating Android and iOS apps, let's select **All**.
-- Creates **eas.json** in the root of our project's directory with the following configuration:
-
-```json eas.json
-{
-  "cli": {
-    "version": ">= 16.18.0",
-    "appVersionSource": "remote"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal"
-    },
-    "preview": {
-      "distribution": "internal"
-    },
-    "production": {
-      "autoIncrement": true
-    }
-  },
-  "submit": {
-    "production": {}
+  function addProduto() {
+    setProdutos((p) => [...p, { id: String(Date.now()), produto: "", doseLha: "", doseLbomba: "", obs: "" }]);
   }
+
+  function updateProduto(index, key, value) {
+    setProdutos((p) => {
+      const copy = [...p];
+      copy[index] = { ...copy[index], [key]: value };
+      return copy;
+    });
+  }
+
+  function removeProduto(index) {
+    setProdutos((p) => p.filter((_, i) => i !== index));
+  }
+
+  async function salvarAplicacao() {
+    if (!fazenda || !talhao || !data) {
+      Alert.alert("Preencha os campos", "Fazenda, Talhão e Data são obrigatórios.");
+      return;
+    }
+
+    const item = {
+      id: String(Date.now()),
+      pulverizador,
+      fazenda,
+      talhao,
+      area,
+      data,
+      vazao,
+      hectaresBomba,
+      tipoOp,
+      operador,
+      produtos: produtos.map((p) => ({ produto: p.produto, doseLha: p.doseLha, doseLbomba: p.doseLbomba, obs: p.obs })),
+      createdAt: new Date().toISOString(),
+    };
+
+    const novoHist = [item, ...historico];
+    setHistorico(novoHist);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(novoHist));
+    Alert.alert("Salvo", "Aplicação salva no histórico.");
+    limparFormulario();
+  }
+
+  function limparFormulario() {
+    setPulverizador("");
+    setFazenda("");
+    setTalhao("");
+    setArea("");
+    setData("");
+    setVazao("");
+    setHectaresBomba("");
+    setTipoOp("");
+    setOperador("");
+    setProdutos([{ id: String(Date.now()), produto: "", doseLha: "", doseLbomba: "", obs: "" }]);
+  }
+
+  async function gerarPdf(item) {
+    try {
+      // monta HTML do relatório
+      const produtosHtml = (item.produtos || [])
+        .map(
+          (p, i) =>
+            `<tr><td style="padding:6px;border:1px solid #ddd">${i + 1}</td><td style="padding:6px;border:1px solid #ddd">${p.produto || ""}</td><td style="padding:6px;border:1px solid #ddd">${p.doseLha || ""}</td><td style="padding:6px;border:1px solid #ddd">${p.doseLbomba || ""}</td><td style="padding:6px;border:1px solid #ddd">${p.obs || ""}</td></tr>`
+        )
+        .join("");
+
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+          </head>
+          <body style="font-family: Arial, Helvetica, sans-serif; padding:16px;">
+            <h2 style="text-align:center;">CampoFácil - Ficha de Aplicação</h2>
+            <p><strong>Fazenda:</strong> ${item.fazenda || ""} &nbsp;&nbsp; <strong>Talhão:</strong> ${item.talhao || ""} &nbsp;&nbsp; <strong>Área (ha):</strong> ${item.area || ""}</p>
+            <p><strong>Data:</strong> ${item.data || ""} &nbsp;&nbsp; <strong>Vazão L/ha:</strong> ${item.vazao || ""} &nbsp;&nbsp; <strong>Hectares/Bomba:</strong> ${item.hectaresBomba || ""}</p>
+            <p><strong>Pulverizador:</strong> ${item.pulverizador || ""} &nbsp;&nbsp; <strong>Tipo:</strong> ${item.tipoOp || ""} &nbsp;&nbsp; <strong>Operador:</strong> ${item.operador || ""}</p>
+
+            <h3>Produtos</h3>
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <thead>
+                <tr>
+                  <th style="padding:6px;border:1px solid #ddd">#</th>
+                  <th style="padding:6px;border:1px solid #ddd">Produto</th>
+                  <th style="padding:6px;border:1px solid #ddd">Dose L/ha</th>
+                  <th style="padding:6px;border:1px solid #ddd">Dose L/bomba</th>
+                  <th style="padding:6px;border:1px solid #ddd">Observação</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${produtosHtml}
+              </tbody>
+            </table>
+
+            <div style="margin-top:20px; font-size:11px; color:#444">
+              <em>Gerado em: ${new Date(item.createdAt).toLocaleString()}</em>
+            </div>
+
+            <div style="position:fixed; bottom:10px; width:100%; text-align:center; font-size:10px; color:#999;">
+              Feito por Felipe Ferreira
+            </div>
+          </body>
+        </html>
+      `;
+
+      // gerar PDF
+      const { uri } = await Print.printToFileAsync({ html });
+      // compartilhar (mostra opção imprimir/salvar no iOS, compartilhar no Android)
+      if (Platform.OS === "android" || Platform.OS === "ios") {
+        await Sharing.shareAsync(uri);
+      } else {
+        // web fallback
+        Alert.alert("PDF gerado", `Arquivo: ${uri}`);
+      }
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Erro", "Não foi possível gerar o PDF.");
+    }
+  }
+
+  async function apagarHistorico() {
+    Alert.alert("Confirmar", "Apagar todo o histórico?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Apagar",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.removeItem(STORAGE_KEY);
+          setHistorico([]);
+        },
+      },
+    ]);
+  }
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+      <Text style={styles.title}>🌾 CampoFácil</Text>
+
+      <Text style={styles.sectionTitle}>Ficha de Aplicação</Text>
+
+      <TextInput placeholder="Pulverizador" value={pulverizador} onChangeText={setPulverizador} style={styles.input} />
+      <TextInput placeholder="Fazenda" value={fazenda} onChangeText={setFazenda} style={styles.input} />
+      <TextInput placeholder="Talhão" value={talhao} onChangeText={setTalhao} style={styles.input} />
+      <TextInput placeholder="Área (ha)" value={area} onChangeText={setArea} style={styles.input} keyboardType="numeric" />
+      <TextInput placeholder="Data (ex: 03/11/2025)" value={data} onChangeText={setData} style={styles.input} />
+      <TextInput placeholder="Vazão (L/ha)" value={vazao} onChangeText={setVazao} style={styles.input} keyboardType="numeric" />
+      <TextInput placeholder="Hectares/Bomba" value={hectaresBomba} onChangeText={setHectaresBomba} style={styles.input} keyboardType="numeric" />
+      <TextInput placeholder="Tipo de operação" value={tipoOp} onChangeText={setTipoOp} style={styles.input} />
+      <TextInput placeholder="Operador" value={operador} onChangeText={setOperador} style={styles.input} />
+
+      <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Produtos</Text>
+      {produtos.map((p, i) => (
+        <ProdutoRow
+          key={p.id}
+          item={p}
+          onChange={(key, val) => updateProduto(i, key, val)}
+          onRemove={() => removeProduto(i)}
+        />
+      ))}
+
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginVertical: 8 }}>
+        <Button title="+ Produto" onPress={addProduto} />
+        <Button title="Limpar ficha" onPress={limparFormulario} color="#ff8c00" />
+      </View>
+
+      <View style={{ marginVertical: 6 }}>
+        <Button title="Salvar Aplicação" onPress={salvarAplicacao} />
+      </View>
+
+      <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Histórico de Aplicações</Text>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+        <Text style={{ color: "#555" }}>Registros: {historico.length}</Text>
+        <Button title="Apagar tudo" onPress={apagarHistorico} color="#d9534f" />
+      </View>
+
+      {historico.length === 0 && <Text style={{ color: "#777", marginBottom: 20 }}>Nenhuma aplicação registrada.</Text>}
+
+      <FlatList
+        data={historico}
+        keyExtractor={(it) => it.id}
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{item.fazenda} — {item.talhao}</Text>
+            <Text>🗓 {item.data} | Área: {item.area || "-"} ha | Vazão: {item.vazao || "-"}</Text>
+            <Text>🚜 Pulverizador: {item.pulverizador || "-" } | Operador: {item.operador || "-"}</Text>
+            <Text>Tipo: {item.tipoOp || "-"}</Text>
+
+            <Text style={{ marginTop: 6, fontWeight: "700" }}>Produtos:</Text>
+            {item.produtos && item.produtos.length > 0 ? item.produtos.map((p, idx) => (
+              <Text key={idx} style={{ fontSize: 13 }}>
+                • {p.produto || "-"} — {p.doseLha || "-"} L/ha — {p.doseLbomba || "-"} L/bomba {p.obs ? `(${p.obs})` : ""}
+              </Text>
+            )) : <Text style={{ color: "#666" }}>— Sem produtos —</Text>}
+
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+              <Button title="Gerar PDF" onPress={() => gerarPdf(item)} />
+              <Button title="Apagar" color="#d9534f" onPress={async () => {
+                const newH = historicalFilterRemove(historico, item.id);
+                setHistorico(newH);
+                await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newH));
+              }} />
+            </View>
+          </View>
+        )}
+      />
+    </ScrollView>
+  );
 }
-```
 
-This is the default configuration for **eas.json** in a new project. It does two things:
+// helper remove by id
+function historicalFilterRemove(list, id) {
+  return list.filter(x => x.id !== id);
+}
 
-- Defines the current EAS CLI version.
-- Adds three [build profiles](/build/eas-json/#build-profiles): `development`, `preview`, and `production`.
-
-</Step>
-
-<Collapsible summary="Explore development profile further">
-
-**eas.json** is a collection of different build profiles. Each profile is tailored with distinct configurations to produce specific build types. These profiles can also include platform-specific settings for Android or iOS.
-
-Currently, our focus is on the `development` profile, which includes the following configuration:
-
-- [`developmentClient`](/eas/json/#developmentclient): Enabled (`true`) for creating a debug build. It loads the app using the `expo-dev-client` library, which provides development tools and generates a build artifact for device or emulator/simulator installation and allows using the app for local development as it supports updating the JavaScript on the fly.
-- [`distribution`](/eas/json/#distribution): Configured as `internal` to indicate that we want to share the build internally (instead of uploading it on app stores).
-
-> **Note**: Builds offer extensive customization options, including platform-specific settings and the ability to extend configurations across different build profiles. Learn more about [customizing build profiles](/build/eas-json/#build-profiles).
-
-</Collapsible>
-
-## Summary
-
-<ProgressTracker
-  currentChapterIndex={0}
-  name="EAS_TUTORIAL"
-  summary="
-We successfully used the EAS CLI to initialize, and configure our project, link it to EAS servers, and prepare a development build."
-  nextChapterDescription="In the next chapter, let's create a development build for Android, install it on a device and an emulator, and get it running with the development server."
-  nextChapterTitle="Create and run a cloud build for Android"
-  nextChapterLink="/tutorial/eas/android-development-build/"
-/>
+const styles = StyleSheet.create({
+  title: { fontSize: 22, fontWeight: "700", marginBottom: 10, textAlign: "center" },
+  sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
+  input: { backgroundColor: "#fff", padding: 10, marginBottom: 8, borderRadius: 8, borderWidth: 1, borderColor: "#e0e0e0" },
+  prodRow: { flexDirection: "row", alignItems: "center", marginBottom: 6, flexWrap: "wrap" },
+  prodInput: { flex: 1, minWidth: "42%", marginRight: 6 },
+  smallInput: { width: 90, marginRight: 6 },
+  removeBtn: { backgroundColor: "#d9534f", padding: 8, borderRadius: 6 },
+  card: { backgroundColor: "#fff", padding: 10, marginBottom: 10, borderRadius: 8, borderWidth: 1, borderColor: "#e6e6e6" },
+  cardTitle: { fontWeight: "700", marginBottom: 4 },
+});
