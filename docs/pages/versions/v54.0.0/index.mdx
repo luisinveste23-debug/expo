@@ -1,128 +1,103 @@
----
-title: Reference
-hideTOC: true
----
+import React, { useState, useEffect } from "react";
+import { View, Text, TextInput, Button, FlatList, Alert, ScrollView } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import * as Print from "expo-print";
 
-import { BookOpen02Icon } from '@expo/styleguide-icons/outline/BookOpen02Icon';
+export default function App() {
+  const [talhao, setTalhao] = useState("");
+  const [dose, setDose] = useState("");
+  const [unidade, setUnidade] = useState("");
+  const [vazao, setVazao] = useState("");
+  const [data, setData] = useState("");
+  const [observacao, setObservacao] = useState("");
+  const [aplicacoes, setAplicacoes] = useState([]);
 
-import { BoxLink } from '~/ui/components/BoxLink';
-import { Collapsible } from '~/ui/components/Collapsible';
-import RedirectNotification from '~/ui/components/RedirectNotification';
-import {
-  AndroidIOSCompatibilityTable,
-  ReactNativeCompatibilityTable,
-} from '~/ui/components/SDKTables';
-import { Terminal } from '~/ui/components/Snippet';
-import { CODE } from '~/ui/components/Text';
+  useEffect(() => {
+    carregarDados();
+  }, []);
 
-<RedirectNotification>
-  The page you are looking for does not exist in this SDK version. It may have been deprecated or
-  added to a newer SDK version.
-</RedirectNotification>
+  const carregarDados = async () => {
+    const dataSalva = await AsyncStorage.getItem("aplicacoes");
+    if (dataSalva) setAplicacoes(JSON.parse(dataSalva));
+  };
 
-The Expo SDK provides access to device and system functionality such as contacts, camera, gyroscope, GPS location, and so on, in the form of packages. You can install any Expo SDK package using the `npx expo install` command. For example, three different packages are installed using the following command:
+  const salvarAplicacao = async () => {
+    if (!talhao || !dose || !data) {
+      Alert.alert("Campos obrigatórios", "Preencha talhão, dose e data!");
+      return;
+    }
+    const nova = { id: Date.now().toString(), talhao, dose, unidade, vazao, data, observacao };
+    const atualizadas = [...aplicacoes, nova];
+    setAplicacoes(atualizadas);
+    await AsyncStorage.setItem("aplicacoes", JSON.stringify(atualizadas));
+    limparCampos();
+  };
 
-<Terminal cmd={['$ npx expo install expo-camera expo-contacts expo-sensors']} />
+  const limparCampos = () => {
+    setTalhao(""); setDose(""); setUnidade(""); setVazao(""); setData(""); setObservacao("");
+  };
 
-After installing one or more packages, you can import them into your JavaScript code:
+  const exportarCSV = async () => {
+    if (aplicacoes.length === 0) return Alert.alert("Nada para exportar!");
+    const csv = "Talhão,Data,Dose,Unidade,Vazão,Observação\n" +
+      aplicacoes.map(a => `${a.talhao},${a.data},${a.dose},${a.unidade},${a.vazao},${a.observacao}`).join("\n");
+    const caminho = FileSystem.documentDirectory + "aplicacoes.csv";
+    await FileSystem.writeAsStringAsync(caminho, csv, { encoding: FileSystem.EncodingType.UTF8 });
+    await Sharing.shareAsync(caminho);
+  };
 
-```js
-import { CameraView } from 'expo-camera';
-import * as Contacts from 'expo-contacts';
-import { Gyroscope } from 'expo-sensors';
-```
+  const exportarPDF = async () => {
+    if (aplicacoes.length === 0) return Alert.alert("Nada para exportar!");
+    let html = `
+      <h1>Relatório de Aplicações</h1>
+      <table border="1" style="width:100%; border-collapse:collapse;">
+      <tr><th>Talhão</th><th>Data</th><th>Dose</th><th>Unidade</th><th>Vazão</th><th>Obs</th></tr>
+      ${aplicacoes.map(a => `<tr><td>${a.talhao}</td><td>${a.data}</td><td>${a.dose}</td><td>${a.unidade}</td><td>${a.vazao}</td><td>${a.observacao}</td></tr>`).join("")}
+      </table>
+    `;
+    await Print.printAsync({ html });
+  };
 
-This allows you to write [`Contacts.getContactsAsync()`](./sdk/contacts#contactsgetcontactsasynccontactquery) and read the contacts from the device, read the gyroscope sensor to detect device movement, or start the phone's camera and take photos.
+  const limparTudo = async () => {
+    await AsyncStorage.removeItem("aplicacoes");
+    setAplicacoes([]);
+  };
 
-## All Expo SDK packages work in any React Native app
+  return (
+    <ScrollView style={{ padding: 20, marginTop: 40 }}>
+      <Text style={{ fontSize: 24, fontWeight: "bold", marginBottom: 10 }}>🌾 Agro Control Aplicações</Text>
 
-Expo apps are React Native apps, so all Expo SDK packages work in any React Native app with the `expo` package installed and configured. The easiest way to create a React Native app with support for Expo SDK packages is to use `create-expo-app`. However, you can also add Expo SDK support to an existing React Native app with the `npx install-expo-modules` command.
+      <TextInput placeholder="Talhão" value={talhao} onChangeText={setTalhao} style={{ borderWidth: 1, marginBottom: 5, padding: 8 }} />
+      <TextInput placeholder="Data (ex: 03/11/2025)" value={data} onChangeText={setData} style={{ borderWidth: 1, marginBottom: 5, padding: 8 }} />
+      <TextInput placeholder="Dose" value={dose} onChangeText={setDose} style={{ borderWidth: 1, marginBottom: 5, padding: 8 }} />
+      <TextInput placeholder="Unidade" value={unidade} onChangeText={setUnidade} style={{ borderWidth: 1, marginBottom: 5, padding: 8 }} />
+      <TextInput placeholder="Vazão" value={vazao} onChangeText={setVazao} style={{ borderWidth: 1, marginBottom: 5, padding: 8 }} />
+      <TextInput placeholder="Observação" value={observacao} onChangeText={setObservacao} style={{ borderWidth: 1, marginBottom: 10, padding: 8 }} />
 
-<Terminal
-  cmd={['# Create a project named my-app', '$ npx create-expo-app my-app --template bare-minimum']}
-  cmdCopy="npx create-expo-app my-app --template bare-minimum"
-/>
+      <Button title="Salvar Aplicação" onPress={salvarAplicacao} />
+      <View style={{ marginVertical: 10 }} />
+      <Button title="Exportar CSV" onPress={exportarCSV} />
+      <View style={{ marginVertical: 10 }} />
+      <Button title="Exportar PDF" onPress={exportarPDF} />
+      <View style={{ marginVertical: 10 }} />
+      <Button title="Limpar Tudo" color="red" onPress={limparTudo} />
 
-<BoxLink
-  title="Install Expo SDK packages in existing React Native apps"
-  href="/bare/installing-expo-modules"
-  description={
-    <>
-      Learn more about configuring projects created with{' '}
-      <CODE>npx @react-native-community/cli@latest init</CODE> to Expo SDK packages.
-    </>
-  }
-  Icon={BookOpen02Icon}
-/>
-
-<BoxLink
-  title="Use libraries"
-  description="Learn how to install Expo SDK packages in your project."
-  href="/workflow/using-libraries"
-  Icon={BookOpen02Icon}
-/>
-
-## Using pre-release versions
-
-New Expo SDK versions are released three times each year. Between these releases, we publish pre-release versions of the `expo` package and all of the Expo SDK packages. Pre-releases are not considered stable and should only be used if you are comfortable with the risk of encountering bugs or other issues.
-
-### Canary releases
-
-Canary releases represent a snapshot of the state of the `main` branch at the time they are published. Canary package versions include `-canary` in the name, along with the date and commit hash, such as `54.0.0-canary-20240418-8d74597`. To install the latest canary release:
-
-<Terminal
-  cmd={[
-    '# Install the alpha version of expo and its related packages',
-    '$ npm install expo@canary && npx expo install --fix',
-  ]}
-  cmdCopy="npm install expo@canary && npx expo install --fix"
-/>
-
-You can often use pre-release versions of individual packages with stable releases of the Expo SDK. There may occasionally be incompatibilities or other issues that arise in canary-quality releases. You may want to [silence dependency validation warnings](/more/expo-cli/#configuring-dependency-validation) if you opt in to the canary package and once you have verified that it works well for your use cases.
-
-### Beta releases
-
-Before each Expo SDK release, we publish beta versions of the `expo` package and all of the Expo SDK packages. Beta releases are considered much more stable than canary releases, and we encourage developers to try them out on their apps and share their feedback. Beta releases use the `beta` tag on npm and follow the instructions in the related [changelog](https://expo.dev/changelog) post.
-
-## Each Expo SDK version depends on a React Native version
-
-<ReactNativeCompatibilityTable />
-
-### Additional information
-
-<Collapsible summary="Expo SDK policy for tracking React Native releases">
-
-- Expo SDK versions are released three times each year, and each Expo SDK release targets a single React Native version. This is typically the latest stable version at the time of the release.
-- The release cadence of React Native has varied over its history and it is currently on pace for six releases in 2025. While on this cadence, you can expect that there will be an Expo SDK version for every second React Native release.
-- Pre-release versions of the upcoming Expo SDK will include support for the latest version of React Native quickly, usually the same day it is released. A member of the Expo SDK team works on the React Native releases team for each release, and is responsible for continuously updating the React Native version in the Expo repository, verifying compatibility, and reporting regressions back to the team at Meta.
-
-</Collapsible>
-
-<Collapsible summary=" Why not release a new Expo SDK version immediately for every React Native release?">
-
-At Expo, we have found that releasing three major version provides a good balance of stability and innovation for developers depending on our open source tools. Expo and Meta work closely together on releases, and we will keep improving our processes to get the latest Expo and React Native features to you as quickly as possible.
-
-</Collapsible>
-
-<Collapsible summary="What if I need a change from the latest React Native version and it's not yet in an Expo SDK release?"
->
-We work closely with the team at Meta to ensure that any urgent fixes are included in the React Native version used by the latest Expo SDK. If your issue won't be cherrypicked into an existing release because it is more niche, or it involves a breaking change, then you have two options:
-
-1. Use [`patch-package`](https://github.com/ds300/patch-package) to pull in the fix.
-2. Use a [pre-release version of the Expo SDK](#using-pre-release-versions). An ([example](https://expo.dev/changelog/react-native-78)).
-
-</Collapsible>
-
-<Collapsible summary="Can I use an older version of React Native with the latest Expo SDK?">
-
-Packages in the Expo SDK are intended to support the target React Native version for that SDK. Typically, they will not support older versions of React Native, but they may. When a new version of React Native is released, the latest versions of the Expo SDK packages are typically updated to support it. However, this may take weeks or more, depending on the extent of the changes in the release.
-
-</Collapsible>
-
-## Support for Android and iOS versions
-
-Each version of Expo SDK supports a minimum OS version of Android and iOS. For Android, the `compileSdkVersion` is defined which tells the [Gradle](https://developer.android.com/studio/build) which Android SDK version to use to compile the app. This also means that you can use the Android API features included in that SDK version and from the previous versions. For iOS, the [Xcode](https://developer.apple.com/news/upcoming-requirements/) tells the minimum Xcode SDK version to use to compile the app.
-
-<AndroidIOSCompatibilityTable />
-
-When deciding whether to upgrade your Expo SDK version, consider both Expo's SDK version and app store submission requirements, as described in the above table. Google Play Store and Apple App Store periodically increase their minimum required OS versions and API levels, which are required for new app submissions. Expo has no control over the app store requirements, and you should check [Google](https://developer.android.com/studio/build) and [Apple](https://developer.apple.com/news/upcoming-requirements/) for the current store submission requirements.
+      <Text style={{ fontSize: 18, marginTop: 20, fontWeight: "bold" }}>📋 Aplicações Salvas:</Text>
+      <FlatList
+        data={aplicacoes}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={{ borderBottomWidth: 1, padding: 5 }}>
+            <Text>🌱 Talhão: {item.talhao}</Text>
+            <Text>📅 Data: {item.data}</Text>
+            <Text>💧 Dose: {item.dose} {item.unidade}</Text>
+            <Text>🚜 Vazão: {item.vazao}</Text>
+            <Text>🗒️ Obs: {item.observacao}</Text>
+          </View>
+        )}
+      />
+    </ScrollView>
+  );
+}
